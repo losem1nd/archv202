@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>PLD Helper</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+  <!-- Optional ES6 polyfills are intentionally omitted to avoid render-blocking external dependencies. -->
   <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
   <!-- Style for Responsive Design -->
    <style>
@@ -3988,11 +3988,24 @@ body.low-spec .tab-content.tab-leave > * > * {
     let isAccessLocked = false; // Security lock state
     let isSafeModeActive = false;
     let safeModeClickCount = 0;
-    let originalPerfMode = localStorage.getItem('perfMode');
+    const storageFacade = {
+        local: {
+            getItem(key) { try { return window.localStorage ? window.localStorage.getItem(key) : null; } catch (_) { return null; } },
+            setItem(key, value) { try { if (window.localStorage) window.localStorage.setItem(key, value); } catch (_) {} },
+            removeItem(key) { try { if (window.localStorage) window.localStorage.removeItem(key); } catch (_) {} },
+            clear() { try { if (window.localStorage) window.localStorage.clear(); } catch (_) {} }
+        },
+        session: {
+            getItem(key) { try { return window.sessionStorage ? window.sessionStorage.getItem(key) : null; } catch (_) { return null; } },
+            setItem(key, value) { try { if (window.sessionStorage) window.sessionStorage.setItem(key, value); } catch (_) {} }
+        }
+    };
+
     const ARCH_ROOT_SESSION_KEY = 'archRootSessionV1';
     const ARCH_USER_LAYER_KEY = 'archUserLayerConfigV1';
     const ARCH_AUDIT_LOG_KEY = 'archUserLayerAuditV1';
-    let isRootSession = sessionStorage.getItem(ARCH_ROOT_SESSION_KEY) === 'enabled';
+    let originalPerfMode = storageFacade.local.getItem('perfMode');
+    let isRootSession = storageFacade.session.getItem(ARCH_ROOT_SESSION_KEY) === 'enabled';
     const userLayerDefaults = {
         welcomeTitle: 'Welcome Back',
         welcomeText: 'This is the modernized version of the PLD Helper. The interface has been upgraded to a fluent design language.',
@@ -4101,12 +4114,12 @@ body.low-spec .tab-content.tab-leave > * > * {
         if (enabled) {
             document.body.classList.add('low-spec');
             setupCardTilt();
-            localStorage.setItem('perfMode', 'enabled');
+            storageFacade.local.setItem('perfMode', 'enabled');
             if (notify) showSnackbar("Performance Mode Enabled");
         } else {
             document.body.classList.remove('low-spec');
             setupMouseGlow();
-            localStorage.setItem('perfMode', 'disabled');
+            storageFacade.local.setItem('perfMode', 'disabled');
             if (notify) showSnackbar("Performance Mode Disabled");
         }
 
@@ -4123,7 +4136,7 @@ body.low-spec .tab-content.tab-leave > * > * {
 
     class MotionController {
         constructor() {
-            this.enabled = localStorage.getItem('motionMode') !== 'disabled';
+            this.enabled = storageFacade.local.getItem('motionMode') !== 'disabled';
             this.performanceMode = isPerformanceModeEnabled();
             this.reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
             this.profile = 'full';
@@ -4171,7 +4184,7 @@ body.low-spec .tab-content.tab-leave > * > * {
 
         setEnabled(enabled) {
             this.enabled = !!enabled;
-            localStorage.setItem('motionMode', this.enabled ? 'enabled' : 'disabled');
+            storageFacade.local.setItem('motionMode', this.enabled ? 'enabled' : 'disabled');
             this.updateProfile();
         }
 
@@ -4711,12 +4724,12 @@ body.low-spec .tab-content.tab-leave > * > * {
             devMode, darkTheme: document.body.classList.contains("dark-theme"),
             achievements, currentLanguage
         };
-        localStorage.setItem("lefiSaveV2", JSON.stringify(data));
+        storageFacade.local.setItem("lefiSaveV2", JSON.stringify(data));
         // persistStableState('save-game');
     }
 
     function loadGame() {
-        const saved = localStorage.getItem("lefiSaveV2");
+        const saved = storageFacade.local.getItem("lefiSaveV2");
         if (saved) {
             try {
                 const data = JSON.parse(saved);
@@ -4835,7 +4848,7 @@ body.low-spec .tab-content.tab-leave > * > * {
         // }
         else if (normalizedVal === "wipe-data") {
             if (confirm("Reset everything?")) {
-                localStorage.removeItem("lefiSaveV2");
+                storageFacade.local.removeItem("lefiSaveV2");
                 location.reload();
             }
         } 
@@ -4902,7 +4915,7 @@ body.low-spec .tab-content.tab-leave > * > * {
     }
 
     function getUserLayerConfig() {
-        const raw = localStorage.getItem(ARCH_USER_LAYER_KEY);
+        const raw = storageFacade.local.getItem(ARCH_USER_LAYER_KEY);
         if (!raw) return { ...userLayerDefaults };
         try {
             const parsed = JSON.parse(raw);
@@ -4922,11 +4935,11 @@ body.low-spec .tab-content.tab-leave > * > * {
     function addAuditLogEntry(message) {
         const now = new Date().toISOString();
         const current = (() => {
-            try { return JSON.parse(localStorage.getItem(ARCH_AUDIT_LOG_KEY) || '[]'); }
+            try { return JSON.parse(storageFacade.local.getItem(ARCH_AUDIT_LOG_KEY) || '[]'); }
             catch (_err) { return []; }
         })();
         current.push(`${now} - ${message}`);
-        localStorage.setItem(ARCH_AUDIT_LOG_KEY, JSON.stringify(current.slice(-20)));
+        storageFacade.local.setItem(ARCH_AUDIT_LOG_KEY, JSON.stringify(current.slice(-20)));
     }
 
     function applyUserLayerConfig() {
@@ -4940,7 +4953,7 @@ body.low-spec .tab-content.tab-leave > * > * {
         const auditEl = document.getElementById('rootEditorAuditLog');
         if (auditEl) {
             let logs = [];
-            try { logs = JSON.parse(localStorage.getItem(ARCH_AUDIT_LOG_KEY) || '[]'); }
+            try { logs = JSON.parse(storageFacade.local.getItem(ARCH_AUDIT_LOG_KEY) || '[]'); }
             catch (_err) { logs = []; }
             auditEl.textContent = logs.length ? logs.join('\n') : 'No changes yet.';
         }
@@ -4948,7 +4961,7 @@ body.low-spec .tab-content.tab-leave > * > * {
 
     function activateRootSession() {
         isRootSession = true;
-        sessionStorage.setItem(ARCH_ROOT_SESSION_KEY, 'enabled');
+        storageFacade.session.setItem(ARCH_ROOT_SESSION_KEY, 'enabled');
         const feedback = document.getElementById('terminalRootFeedback');
         if (feedback) feedback.textContent = 'Root session enabled for this browser tab.';
         addAuditLogEntry('Root session unlocked via terminal command');
@@ -5027,7 +5040,7 @@ body.low-spec .tab-content.tab-leave > * > * {
                 if (!/^#[0-9a-fA-F]{6}$/.test(nextConfig.accentColor || '')) nextConfig.accentColor = userLayerDefaults.accentColor;
                 if (!nextConfig.welcomeTitle) nextConfig.welcomeTitle = userLayerDefaults.welcomeTitle;
                 if (!nextConfig.welcomeText) nextConfig.welcomeText = userLayerDefaults.welcomeText;
-                localStorage.setItem(ARCH_USER_LAYER_KEY, JSON.stringify(nextConfig));
+                storageFacade.local.setItem(ARCH_USER_LAYER_KEY, JSON.stringify(nextConfig));
                 addAuditLogEntry(`User layer updated: ${Object.keys(nextConfig).join(', ')}`);
                 applyUserLayerConfig();
                 setTerminalFeedback('User layer saved and applied.');
@@ -5036,7 +5049,7 @@ body.low-spec .tab-content.tab-leave > * > * {
 
         if (resetBtn) {
             resetBtn.onclick = () => {
-                localStorage.removeItem(ARCH_USER_LAYER_KEY);
+                storageFacade.local.removeItem(ARCH_USER_LAYER_KEY);
                 addAuditLogEntry('User layer reset to defaults');
                 applyUserLayerConfig();
                 fillForm();
@@ -5451,14 +5464,14 @@ body.low-spec .tab-content.tab-leave > * > * {
         // 5. Performance Mode Toggle
         const perfToggle = document.getElementById('perfToggle');
         if (perfToggle) {
-            setPerformanceMode(localStorage.getItem('perfMode') === 'enabled', { notify: false, syncToggle: true });
+            setPerformanceMode(storageFacade.local.getItem('perfMode') === 'enabled', { notify: false, syncToggle: true });
             perfToggle.onchange = () => setPerformanceMode(perfToggle.checked, { notify: true, syncToggle: true });
         }
 
         const motionToggle = document.getElementById('motionToggle');
         motionController = new MotionController();
         if (motionToggle) {
-            motionToggle.checked = localStorage.getItem('motionMode') !== 'disabled';
+            motionToggle.checked = storageFacade.local.getItem('motionMode') !== 'disabled';
             motionToggle.onchange = () => {
                 if (motionToggleRafPending) return;
                 motionToggleRafPending = true;
@@ -5534,7 +5547,7 @@ body.low-spec .tab-content.tab-leave > * > * {
         const noBtn = document.getElementById('firstTimePerfNo');
         if (!overlay || !yesBtn || !noBtn) return;
 
-        const hasSeenPrompt = localStorage.getItem('perfPromptSeen') === 'true';
+        const hasSeenPrompt = storageFacade.local.getItem('perfPromptSeen') === 'true';
         if (hasSeenPrompt) {
             overlay.style.display = 'none';
             return;
@@ -5546,12 +5559,12 @@ body.low-spec .tab-content.tab-leave > * > * {
 
         yesBtn.onclick = () => {
             setPerformanceMode(true, { notify: true, syncToggle: true });
-            localStorage.setItem('perfPromptSeen', 'true');
+            storageFacade.local.setItem('perfPromptSeen', 'true');
             closeFirstTimePerfPrompt();
         };
 
         noBtn.onclick = () => {
-            localStorage.setItem('perfPromptSeen', 'true');
+            storageFacade.local.setItem('perfPromptSeen', 'true');
             closeFirstTimePerfPrompt();
         };
     }
@@ -6133,7 +6146,7 @@ body.low-spec .tab-content.tab-leave > * > * {
         clearBtn.className = 'system-window-action danger';
         clearBtn.textContent = 'Clear Data';
         clearBtn.onclick = () => {
-            localStorage.clear();
+            storageFacade.local.clear();
             refreshTestModeWindowPerformanceLabel();
         };
 
@@ -6243,7 +6256,7 @@ body.low-spec .tab-content.tab-leave > * > * {
                 if(cdDisp) cdDisp.textContent = `[${count}]`;
                 if(count >= 4) {
                     clearInterval(interval);
-                    localStorage.clear();
+                    storageFacade.local.clear();
                     if(tProc) tProc.style.display = 'none';
                     const tSucc = document.getElementById('terminalSuccess');
                     const tBackBtn = document.getElementById('terminalBackButton');
